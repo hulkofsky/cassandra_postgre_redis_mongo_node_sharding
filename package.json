@@ -1,0 +1,23 @@
+{
+  "name": "sharding",
+  "version": "1.0.0",
+  "description": "",
+  "main": "server.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "body-parser": "^1.18.3",
+    "cassandra-client": "^0.15.2",
+    "cassandra-driver": "^3.5.0",
+    "express": "^4.16.3",
+    "mongoose": "^5.2.0",
+    "morgan": "^1.9.0",
+    "pg": "^7.4.3",
+    "redis": "^2.8.0"
+  }
+}
