@@ -42,7 +42,7 @@ console.log('Postgres connected!')
 router.post('/add', (req,res)=>{
     if(req.body.username && req.body.email) {
         const index = redisClient.keys('*', (err, keys)=>{
-            if (err) return console.log(err);
+            if (err) return console.log(`An error has been occured while getting Redis keys ${err}`);
             
             let query = ''
             switch(keys.length % 3) {
@@ -84,8 +84,6 @@ router.post('/add', (req,res)=>{
                     })
                     break
                 default:
-                    //console.log(res)
-    
                     break;
               }
             return keys.length;       
@@ -108,10 +106,16 @@ router.get('/users/:id', (req,res)=>{
                             console.log(err, 'while retrieving from mongodb')
                             return res.json({success: false, message: 'An error has been occured while retrieving from MongoDb'})
                         }
-                        res.json({  success: true, 
-                                    message: `User selected from mongo`,
-                                    user: result 
-                                })
+                        if(result) {
+                            res.json({  success: true, 
+                                message: `User selected from mongo`,
+                                user: result 
+                            })
+                        }else{
+                            res.json({  success: false, 
+                                message: `user id not found in MongoDb`, 
+                            })
+                        }     
                     })
                     break
                 case 1: //selecting user from cassandra
@@ -121,10 +125,17 @@ router.get('/users/:id', (req,res)=>{
                             console.log(err, 'while selecting from cassandra')
                             return res.json({success: false, message: 'An error has been occured while selecting from Cassandra'})
                         }
-                        res.json({  success: true, 
-                                    message: `User selected from Cassandra`,
-                                    user: result.rows[0]
-                                })
+                        if(result.rows.length != 0) {
+                            res.json({  success: true, 
+                                message: `User selected from Cassandra`,
+                                user: result.rows[0]
+                            })
+                        }else{
+                            res.json({  success: false, 
+                                message: `user id not found in Cassandra`,
+                            })
+                        }
+                        
                     });
                     break
                 case 2: //selecting user from postgres
@@ -134,19 +145,24 @@ router.get('/users/:id', (req,res)=>{
                             console.log(err, 'while selecting from Postgres')
                             return res.json({success: false, message: 'An error has been occured while selecting from Postgres'})
                         }
-                        res.json({  success: true, 
-                                    message: `User selected from Postgres`,
-                                    user: result.rows[0]
-                                })
+                        if(result.rows.length != 0) {
+                            res.json({  success: true, 
+                                message: `User selected from Postgres`,
+                                user: result.rows[0]
+                            })
+                        }else{
+                            res.json({  success: false, 
+                                message: `user id not found in Postgres`,
+                            })
+                        }
+                        
                     });
                     break
             }
         }else{
             res.send(`This id doesn't exist`)
         }
-    
-    })
-    
+    }) 
 })
 
 //get all users
@@ -184,14 +200,121 @@ router.get('/users', (req,res)=>{
 })
 
 //update user by id
-router.put('/', (req,res)=>{ 
+router.put('/users/:id', (req,res)=>{ 
+    if(req.body.username && req.body.email) {
+        const index = redisClient.keys('*', (err, keys)=>{
+            if(req.params.id>=0 && req.params.id<=keys.length) {
+                let query = ''
+                switch(req.params.id % 3) {
+                    case 0:
+                        User.update({ id: req.params.id }, 
+                                    { $set: {username: req.body.username, email: req.body.email}},
+                                    (err, result)=>{
+                                        if(err) {
+                                            console.log(err, 'while updating user in mongodb')
+                                            return res.json({success: false, message: 'An error has been occured while updating user in MongoDb'})
+                                        }
+                                        res.json({  success: true, 
+                                                    message: `User ${req.params.id} successfully updated in MongoDb`,
+                                                    user: result 
+                                                })
+                                    })
+                        break
+                    case 1:
+                        query = `UPDATE users.profiles SET username='${req.body.username}',email='${req.body.email}' WHERE id=${req.params.id};`
+                        cassandraClient.execute(query, (err,result)=>{
+                            if(err){
+                                console.log(err, 'while updating in cassandra')
+                                return res.json({success: false, message: 'An error has been occured while updating in Cassandra'})
+                            }
+                            res.json({  success: true, 
+                                        message: `User ${req.params.id} successfully updated in Cassandra`,
+                                        user: result.rows
+                                    })
+                        });
+                        break
+                    case 2:
+                        query = `UPDATE profiles SET username='${req.body.username}', email='${req.body.email}' WHERE id = ${req.params.id}`
+                        postgresClient.query(query, (err,result)=>{
+                            if(err){
+                                console.log(err, 'while selecting from Postgres')
+                                return res.json({success: false, message: 'An error has been occured while updating in Postgres'})
+                            }
+                            res.json({  success: true, 
+                                        message: `User ${req.params.id} successfully updated in Postgres`,
+                                        user: result.rows //empty array
+                                    })
+                        });
+                        break
+                    default:
+                        break
+                }
+            } else{
+                res.send('user id not fund')
+            }
+        })
+    } else {
+        res.send('Pls enter username and email to update')
+    }
+})
 
+//delete user by id
+router.delete('/users/:id', (req,res)=>{
+    const index = redisClient.keys(`${req.params.id}`, (err, keys)=>{
+        if(keys.length==1) {
+            let query = ''
+            redisClient.del(`${req.params.id}`,(err)=>{
+                if (err)res.send(`error while deleting Redis key ${req.params.id}, ${err}`)
+            })
+            switch(req.params.id % 3) {
+                case 0:
+                    User.remove({ id: req.params.id }, (err, result)=>{
+                        if(err) {
+                            console.log(err, 'while updating user in mongodb')
+                            return res.json({success: false, message: 'An error has been occured while deleting user from MongoDb'})
+                        }
+                        res.json({  success: true, 
+                                    message: `User ${req.params.id} successfully deleted from MongoDb`, 
+                                })
+                    })
+                    break
+                case 1:
+                    query = `DELETE from users.profiles WHERE id=${req.params.id};`
+                    cassandraClient.execute(query, (err,result)=>{
+                        if(err){
+                            console.log(err, 'while deleting from cassandra')
+                            return res.json({success: false, message: 'An error has been occured while deleting from Cassandra'})
+                        }
+                        res.json({  success: true, 
+                                    message: `User ${req.params.id} successfully deleted from Cassandra`,
+                                })
+                    });
+                    break
+                case 2:
+                    query = `DELETE FROM profiles WHERE id = ${req.params.id}`
+                    postgresClient.query(query, (err,result)=>{
+                        if(err){
+                            console.log(err, 'while deleting from Postgres')
+                            return res.json({success: false, message: 'An error has been occured while deleting from Postgres'})
+                        }
+                        res.json({  success: true, 
+                                    message: `User ${req.params.id} successfully deleted from Postgres`,
+                                })
+                    });
+                    break
+                default:
+                    break
+            }
+        }else{
+            res.send('user id not found')
+        }
+    })
 })
 
 //search user
 router.get('/search', (req,res)=>{
     const searchParam = req.query.query
-    console.log(searchParam, 'to find') //full text search from mongo
+    //full text search from mongo
     User.find({ $text: { $search: searchParam}}, (err, mongoResult)=>{
         if(err){
             console.log(err, 'while searching in mongo')
@@ -207,13 +330,12 @@ router.get('/search', (req,res)=>{
             const psqlQuery = `SELECT * FROM profiles WHERE make_tsvector(username, email) @@ to_tsquery('${searchParam}');` //full text search from PSQL
             postgresClient.query(psqlQuery, (err,psqlSearch)=>{
                 if(err){
-                    console.log(err, 'while searching Postgres in')
+                    console.log(err, 'while searching in Postgres')
                     res.json({success: false, message: 'An error has been occured during Postgres search'})
                 }
                 const foundUsers = [...mongoResult, ...cassandraResult, ...psqlSearch.rows].sort((a,b)=>{
                     return a.id-b.id
-                }) 
-                console.log(foundUsers.length, "length of ur pipirka")  
+                })   
                 if (foundUsers.length == 0) { //cheking if there is a search result
                     res.json({
                         success: true,
@@ -230,8 +352,6 @@ router.get('/search', (req,res)=>{
             
         })
     })
-
-    ///res.send('pishov na hui!!')
 })
 
 module.exports = router
